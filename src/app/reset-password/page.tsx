@@ -1,0 +1,2 @@
+import {LockKeyhole} from "lucide-react"; import {ResetForm} from "./reset-form";
+export default function Page(){return <main className="grid min-h-screen place-items-center bg-slate-100 p-5"><section className="w-full max-w-md rounded-2xl bg-white p-8 shadow-sm"><LockKeyhole className="text-teal-600"/><h1 className="mt-4 text-2xl font-bold">ตั้งรหัสผ่านใหม่</h1><p className="mt-2 text-sm text-slate-500">ตั้งรหัสผ่านใหม่ที่ปลอดภัยสำหรับบัญชีของคุณ</p><div className="mt-6"><ResetForm/></div></section></main>}

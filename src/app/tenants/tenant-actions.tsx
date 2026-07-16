@@ -1,0 +1,17 @@
+"use client";
+
+import { useState, useTransition } from "react";
+import { Pencil, Phone, Trash2, UserRound, X } from "lucide-react";
+import { deleteTenant, updateTenant } from "./actions";
+
+type Tenant = { id: string; full_name: string; phone: string | null };
+const field = "mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm";
+
+export function TenantActions({ tenant, canDelete }: { tenant: Tenant; canDelete: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState("");
+  const save = (formData: FormData) => startTransition(async () => { const result = await updateTenant(tenant.id, formData); if (result.error) setError(result.error); else { setError(""); setOpen(false); } });
+  const remove = () => { if (!window.confirm(`ยืนยันลบบัญชีผู้เช่า ${tenant.full_name}? การลบทำไม่ได้หากมีประวัติสัญญา`)) return; startTransition(async () => { const result = await deleteTenant(tenant.id); if (result.error) setError(result.error); else { setError(""); setOpen(false); } }); };
+  return <><button onClick={() => setOpen(true)} title="แก้ไขข้อมูลผู้เช่า" className="inline-flex items-center gap-1 rounded-lg border border-teal-200 px-3 py-1.5 text-xs font-medium text-teal-700 hover:bg-teal-50"><Pencil size={14}/>แก้ไข</button>{open && <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/45 p-4 backdrop-blur-sm" onMouseDown={() => setOpen(false)}><form action={save} role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()} className="w-full max-w-md rounded-2xl bg-white shadow-2xl"><div className="flex items-start justify-between border-b border-slate-100 px-6 py-4"><div><h2 className="font-bold">แก้ไขข้อมูลผู้เช่า</h2><p className="mt-0.5 text-sm text-slate-500">ปรับชื่อและเบอร์โทรศัพท์</p></div><button type="button" onClick={() => setOpen(false)} className="grid h-9 w-9 place-items-center rounded-lg bg-slate-100 text-slate-600"><X size={18}/></button></div><div className="space-y-4 p-6"><label className="block text-sm font-medium"><span className="flex items-center gap-2"><UserRound size={16} className="text-teal-600"/>ชื่อ-นามสกุล</span><input name="fullName" required defaultValue={tenant.full_name} className={field}/></label><label className="block text-sm font-medium"><span className="flex items-center gap-2"><Phone size={16} className="text-teal-600"/>เบอร์โทรศัพท์</span><input name="phone" inputMode="tel" defaultValue={tenant.phone ?? ""} placeholder="เช่น 081-234-5678" className={field}/></label>{error && <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>}</div><div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-6 py-4">{canDelete ? <button type="button" disabled={pending} onClick={remove} className="inline-flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-50"><Trash2 size={16}/>ลบผู้เช่า</button> : <span/>}<div className="flex gap-3"><button type="button" onClick={() => setOpen(false)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm">ยกเลิก</button><button disabled={pending} className="rounded-xl bg-teal-600 px-5 py-2 text-sm font-semibold text-white">{pending ? "กำลังบันทึก..." : "บันทึกการแก้ไข"}</button></div></div></form></div>}</>;
+}

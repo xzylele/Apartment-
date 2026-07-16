@@ -1,0 +1,2 @@
+import {KeyRound} from "lucide-react"; import {RecoveryForm} from "./recovery-form";
+export default function Page(){return <main className="grid min-h-screen place-items-center bg-slate-100 p-5"><section className="w-full max-w-md rounded-2xl bg-white p-8 shadow-sm"><KeyRound className="text-teal-600"/><h1 className="mt-4 text-2xl font-bold">ลืมรหัสผ่าน</h1><p className="mt-2 text-sm text-slate-500">กรอกอีเมลเพื่อรับลิงก์ตั้งรหัสผ่านใหม่</p><div className="mt-6"><RecoveryForm/></div></section></main>}
