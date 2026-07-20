@@ -144,3 +144,10 @@ button:disabled { cursor: not-allowed; opacity: .65; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+/* invoice-print */
+@media print {
+  .owner-sidebar, .owner-mobile-header, .owner-bottom-nav { display: none !important; }
+  .owner-app { padding-left: 0 !important; background: white !important; }
+  .owner-app > div { padding-bottom: 0 !important; }
+  @page { size: A4; margin: 10mm; }
+}

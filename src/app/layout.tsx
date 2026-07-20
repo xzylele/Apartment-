@@ -3,7 +3,7 @@ import "./globals.css";
 import { AppShell } from "@/components/app-shell";
 import { createClient } from "@/lib/supabase/server";
 
-export const metadata: Metadata = { title: "Home Apartment Manager", description: "ระบบบริหารอพาร์ตเมนต์สำหรับครอบครัว" };
+export const metadata: Metadata = { title: "Apartment Manager", description: "ระบบบริหารอพาร์ตเมนต์" };
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const supabase = await createClient();

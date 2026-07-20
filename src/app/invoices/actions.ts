@@ -70,3 +70,82 @@ export async function updateInvoice(invoiceId: string, _: InvoiceState, formData
   ["/invoices", "/payments", "/dashboard", "/reports"].forEach((path) => revalidatePath(path));
   return { success: "แก้ไขใบแจ้งหนี้เรียบร้อยแล้ว" };
 }
+
+export type InvoicePreviewItem = { leaseId: string; roomId: string; roomNumber: string; tenantName: string; rentAmount: number; waterAmount: number; electricAmount: number; totalAmount: number; hasMeter: boolean; existingInvoice: boolean };
+export type InvoicePreviewResult = { items: InvoicePreviewItem[]; error?: string };
+
+export async function previewInvoices(month: string): Promise<InvoicePreviewResult> {
+  if (!/^\d{4}-\d{2}$/.test(month)) return { items: [], error: "เดือนไม่ถูกต้อง" };
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { items: [], error: "กรุณาเข้าสู่ระบบอีกครั้ง" };
+  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
+  if (!profile || !["owner", "staff"].includes(profile.role)) return { items: [], error: "คุณไม่มีสิทธิ์ดูตัวอย่างบิล" };
+  const billingMonth = `${month}-01`;
+  const { data: leases, error } = await supabase.from("leases").select("id,room_id,rent_amount,rooms(room_number,water_rate,electric_rate),profiles!leases_tenant_id_fkey(full_name)").eq("active", true);
+  if (error) return { items: [], error: "ไม่สามารถโหลดข้อมูลสัญญาเช่าได้" };
+  const roomIds = (leases ?? []).map((lease: any) => lease.room_id);
+  if (!roomIds.length) return { items: [] };
+  const [{ data: readings }, { data: existing }] = await Promise.all([
+    supabase.from("meter_readings").select("room_id,water_previous,water_current,electric_previous,electric_current").eq("reading_month", billingMonth).in("room_id", roomIds),
+    supabase.from("invoices").select("id,room_id,status").eq("billing_month", billingMonth).in("room_id", roomIds),
+  ]);
+  const readingByRoom = new Map((readings ?? []).map((reading: any) => [reading.room_id, reading]));
+  const existingRooms = new Set((existing ?? []).filter((invoice: any) => invoice.status !== "void").map((invoice: any) => invoice.room_id));
+  const voidByRoom = new Map((existing ?? []).filter((invoice: any) => invoice.status === "void").map((invoice: any) => [invoice.room_id, invoice.id]));
+  return { items: (leases ?? []).map((lease: any) => {
+    const room = Array.isArray(lease.rooms) ? lease.rooms[0] : lease.rooms;
+    const tenant = Array.isArray(lease.profiles) ? lease.profiles[0] : lease.profiles;
+    const reading: any = readingByRoom.get(lease.room_id);
+    const rentAmount = Number(lease.rent_amount);
+    const waterAmount = reading ? Number(reading.water_current - reading.water_previous) * Number(room?.water_rate ?? 0) : 0;
+    const electricAmount = reading ? Number(reading.electric_current - reading.electric_previous) * Number(room?.electric_rate ?? 0) : 0;
+    return { leaseId: lease.id, roomId: lease.room_id, roomNumber: room?.room_number ?? "-", tenantName: tenant?.full_name ?? "ไม่ระบุผู้เช่า", rentAmount, waterAmount, electricAmount, totalAmount: rentAmount + waterAmount + electricAmount, hasMeter: Boolean(reading), existingInvoice: existingRooms.has(lease.room_id) };
+  }).sort((a: InvoicePreviewItem, b: InvoicePreviewItem) => a.roomNumber.localeCompare(b.roomNumber, "th", { numeric: true })) };
+}
+
+export async function generateSelectedInvoices(_: InvoiceState, formData: FormData): Promise<InvoiceState> {
+  const month = String(formData.get("month") ?? "");
+  const dueDate = String(formData.get("dueDate") ?? "");
+  const roomIds = [...new Set(formData.getAll("roomIds").map(String).filter(Boolean))];
+  if (!/^\d{4}-\d{2}$/.test(month) || !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) return { error: "กรุณาตรวจสอบเดือนและวันครบกำหนด" };
+  if (!roomIds.length) return { error: "กรุณาเลือกอย่างน้อย 1 ห้อง" };
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "กรุณาเข้าสู่ระบบอีกครั้ง" };
+  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
+  if (!profile || !["owner", "staff"].includes(profile.role)) return { error: "คุณไม่มีสิทธิ์ออกบิล" };
+  const billingMonth = `${month}-01`;
+  const { data: leases } = await supabase.from("leases").select("id,room_id,rent_amount,rooms(room_number,water_rate,electric_rate)").eq("active", true).in("room_id", roomIds);
+  const [{ data: readings }, { data: existing }] = await Promise.all([
+    supabase.from("meter_readings").select("room_id,water_previous,water_current,electric_previous,electric_current").eq("reading_month", billingMonth).in("room_id", roomIds),
+    supabase.from("invoices").select("id,room_id,status").eq("billing_month", billingMonth).in("room_id", roomIds),
+  ]);
+  const readingByRoom = new Map((readings ?? []).map((reading: any) => [reading.room_id, reading]));
+  const existingRooms = new Set((existing ?? []).filter((invoice: any) => invoice.status !== "void").map((invoice: any) => invoice.room_id));
+  const voidByRoom = new Map((existing ?? []).filter((invoice: any) => invoice.status === "void").map((invoice: any) => [invoice.room_id, invoice.id]));
+  let created = 0, reissued = 0, skippedExisting = 0, skippedMeter = 0;
+  for (const lease of (leases ?? []) as any[]) {
+    if (existingRooms.has(lease.room_id)) { skippedExisting++; continue; }
+    const reading: any = readingByRoom.get(lease.room_id);
+    if (!reading) { skippedMeter++; continue; }
+    const room = Array.isArray(lease.rooms) ? lease.rooms[0] : lease.rooms;
+    if (!room) continue;
+    const waterAmount = Number(reading.water_current - reading.water_previous) * Number(room.water_rate);
+    const electricAmount = Number(reading.electric_current - reading.electric_previous) * Number(room.electric_rate);
+    const invoiceNumber = `INV-${month.replace("-", "")}-${room.room_number}`;
+    const voidInvoiceId = voidByRoom.get(lease.room_id);
+    if (voidInvoiceId) {
+      const { error } = await supabase.from("invoices").update({ invoice_number: invoiceNumber, lease_id: lease.id, due_date: dueDate, rent_amount: Number(lease.rent_amount), water_amount: waterAmount, electric_amount: electricAmount, other_amount: 0, status: "issued" }).eq("id", voidInvoiceId).eq("status", "void");
+      if (error) return { error: `ออกบิลใหม่ห้อง ${room.room_number} ไม่สำเร็จ` };
+      reissued++;
+      continue;
+    }
+    const { error } = await supabase.from("invoices").insert({ invoice_number: invoiceNumber, room_id: lease.room_id, lease_id: lease.id, billing_month: billingMonth, due_date: dueDate, rent_amount: Number(lease.rent_amount), water_amount: waterAmount, electric_amount: electricAmount, status: "issued" });
+    if (error?.code === "23505") { skippedExisting++; continue; }
+    if (error) return { error: `สร้างบิลห้อง ${room.room_number} ไม่สำเร็จ` };
+    created++;
+  }
+  ["/invoices", "/dashboard", "/alerts"].forEach((path) => revalidatePath(path));
+  return { success: `ออกบิลสำเร็จ ${created + reissued} ห้อง${reissued ? ` · ออกใหม่จากบิลที่ยกเลิก ${reissued}` : ""}${skippedExisting ? ` · ข้ามบิลเดิม ${skippedExisting}` : ""}${skippedMeter ? ` · ข้ามมิเตอร์ไม่ครบ ${skippedMeter}` : ""}` };
+}
