@@ -42,6 +42,9 @@ async function attachAdminRichMenu(userId: string) {
 }
 function bangkokDate() { return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok" }).format(new Date()); }
 function baht(value: number) { return `\u0e3f${value.toLocaleString("th-TH", { maximumFractionDigits: 2 })}`; }
+function roomNumber(room: { room_number?: string } | Array<{ room_number?: string }> | null | undefined) {
+  return (Array.isArray(room) ? room[0] : room)?.room_number ?? "-";
+}
 
 async function getMenuReply(admin: ReturnType<typeof createAdminClient>, action: string) {
   if (action === "admin:summary") {
@@ -69,12 +72,12 @@ async function getMenuReply(admin: ReturnType<typeof createAdminClient>, action:
     const { data } = await admin.from("invoices").select("invoice_number,due_date,total_amount,rooms(room_number)").in("status", ["issued", "overdue"]).lte("due_date", today).order("due_date").limit(20);
     const invoices = data ?? [];
     const total = invoices.reduce((sum: number, invoice: { total_amount: number | string }) => sum + Number(invoice.total_amount), 0);
-    const lines = invoices.map((invoice: { invoice_number: string; due_date: string; total_amount: number | string; rooms?: Array<{ room_number?: string }> }) => `${invoice.rooms?.[0]?.room_number ?? "-"} | ${invoice.invoice_number} | ${invoice.due_date} | ${baht(Number(invoice.total_amount))}`);
+    const lines = invoices.map((invoice: { invoice_number: string; due_date: string; total_amount: number | string; rooms?: Array<{ room_number?: string }> }) => `🏠 ห้อง ${roomNumber(invoice.rooms)}\n   📅 ครบกำหนด: ${invoice.due_date}\n   💰 ${baht(Number(invoice.total_amount))}`);
     return richMenuDetails.overdue(lines, baht(total));
   }
   if (action === "admin:vacant") {
     const { data } = await admin.from("rooms").select("room_number,monthly_rent").eq("status", "vacant").is("deleted_at", null).order("room_number").limit(20);
-    const lines = (data ?? []).map((room: { room_number: string; monthly_rent: number | string }) => `${room.room_number} - ${baht(Number(room.monthly_rent))}/month`);
+    const lines = (data ?? []).map((room: { room_number: string; monthly_rent: number | string }) => `🏠 ห้อง ${room.room_number}\n   💰 ${baht(Number(room.monthly_rent))} / เดือน`);
     return lineReport.vacant(lines);
   }
   if (action === "admin:leases") {
@@ -83,7 +86,7 @@ async function getMenuReply(admin: ReturnType<typeof createAdminClient>, action:
     nearEnd.setDate(nearEnd.getDate() + 30);
     const endDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok" }).format(nearEnd);
     const { data } = await admin.from("leases").select("end_date,rooms(room_number)").eq("active", true).gte("end_date", today).lte("end_date", endDate).order("end_date").limit(20);
-    const lines = (data ?? []).map((lease: { end_date: string; rooms?: Array<{ room_number?: string }> | null }) => `${lease.rooms?.[0]?.room_number ?? "-"}: ${lease.end_date}`);
+    const lines = (data ?? []).map((lease: { end_date: string; rooms?: Array<{ room_number?: string }> | null }) => `🏠 ห้อง ${roomNumber(lease.rooms)}\n   🗓 สิ้นสุด: ${lease.end_date}`);
     return lineReport.leases(lines);
   }
   if (action === "admin:operations") {
@@ -94,7 +97,7 @@ async function getMenuReply(admin: ReturnType<typeof createAdminClient>, action:
     ]);
     const bills = utilityData ?? [];
     const value = (type: string) => Number(bills.find((bill: { utility_type: string }) => bill.utility_type === type)?.amount ?? 0);
-    const maintenance = (maintenanceData ?? []).map((item: { title: string; status: string; rooms?: Array<{ room_number?: string }> }) => `${item.rooms?.[0]?.room_number ?? "-"} | ${item.title} | ${item.status}`);
+    const maintenance = (maintenanceData ?? []).map((item: { title: string; status: string; rooms?: Array<{ room_number?: string }> }) => `🏠 ห้อง ${roomNumber(item.rooms)}\n   🛠 ${item.title} (${item.status})`);
     return richMenuDetails.operations(month, baht(value("water")), baht(value("electric")), maintenance);
   }
   return lineMenu.choose;

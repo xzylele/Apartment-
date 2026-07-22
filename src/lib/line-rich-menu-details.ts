@@ -1,5 +1,7 @@
+const divider = "━━━━━━━━━━━━";
+
 export const richMenuDetails = {
-  income: (today: string, todayCount: number, todayTotal: string, monthCount: number, monthTotal: string, latest?: string) => `รายรับ\nวันนี้ ${today}: ${todayCount} รายการ รวม ${todayTotal}\nเดือนนี้: ${monthCount} รายการ รวม ${monthTotal}${latest ? `\nล่าสุด: ${latest}` : ""}`,
-  overdue: (lines: string[], total: string) => lines.length ? `บิลค้างชำระ (${lines.length} รายการ)\n${lines.join("\n")}\nรวม ${total}` : "บิลค้างชำระ\nไม่มีรายการค้างชำระ",
-  operations: (month: string, water: string, electric: string, maintenance: string[]) => `ค่าน้ำค่าไฟ ${month}\nค่าน้ำ ${water}\nค่าไฟ ${electric}\n\nงานซ่อมที่ยังไม่เสร็จ${maintenance.length ? `\n${maintenance.join("\n")}` : "\nไม่มีงานค้าง"}`,
+  income: (today: string, todayCount: number, todayTotal: string, monthCount: number, monthTotal: string) => `💰 รายรับ\n${divider}\n📅 วันนี้ (${today})\n• รับชำระ ${todayCount} รายการ\n• รวม ${todayTotal}\n\n📊 เดือนนี้\n• รับชำระ ${monthCount} รายการ\n• รวม ${monthTotal}`,
+  overdue: (lines: string[], total: string) => lines.length ? `⚠️ บิลค้างชำระ (${lines.length} รายการ)\n${divider}\n${lines.join("\n")}\n${divider}\n💰 ยอดค้างรวม: ${total}` : `✅ บิลค้างชำระ\n${divider}\nไม่มีรายการค้างชำระ`,
+  operations: (month: string, water: string, electric: string, maintenance: string[]) => `💧⚡ ค่าน้ำไฟ / งานซ่อม\n${divider}\n🗓 รอบบิล: ${month}\n💧 ค่าน้ำ: ${water}\n⚡ ค่าไฟ: ${electric}\n\n🛠 งานซ่อมที่รอดำเนินการ\n${maintenance.length ? maintenance.join("\n") : "✅ ไม่มีงานค้าง"}`,
 };
