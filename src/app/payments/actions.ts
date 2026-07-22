@@ -57,7 +57,8 @@ export async function recordPayment(_: PaymentState, formData: FormData): Promis
   const { error } = await supabase.from("payments").insert({ invoice_id: invoiceId, amount, method, reference: reference || null, slip_path: slipPath, paid_at: bangkokToUtc(paidAt), recorded_by: user.id });
   if (error) { if (slipPath) await supabase.storage.from("payment-slips").remove([slipPath]); return { error: "ไม่สามารถบันทึกการชำระเงินได้" }; }
   if (alreadyPaid + amount >= Number(invoice.total_amount) - 0.001) await supabase.from("invoices").update({ status: "paid" }).eq("id", invoiceId);
-  const roomNumber = invoice.rooms?.[0]?.room_number ?? "-";
+  const room = invoice.rooms as unknown as { room_number?: string } | null;
+  const roomNumber = room?.room_number ?? "-";
   await notifyLineAdmin(supabase, paymentRoomConfirmationMessage(roomNumber, amount, method));
   await revalidatePaymentPages();
   return { success: `บันทึกรับชำระ ${invoice.invoice_number} จำนวน ${amount.toLocaleString("th-TH")} บาทแล้ว` };
