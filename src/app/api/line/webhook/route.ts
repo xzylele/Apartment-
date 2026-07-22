@@ -20,6 +20,8 @@ export async function POST(request: Request) {
     if (userId && expected && text === expected && unexpired) {
       await admin.from("app_settings").update({ line_admin_user_id: userId, line_link_code: null, line_link_code_expires_at: null, updated_at: new Date().toISOString() }).eq("id", true);
       if (event.replyToken) await reply(event.replyToken, "เชื่อมบัญชีสำเร็จ คุณจะได้รับการแจ้งเตือนจากระบบอพาร์ตเมนต์");
+    } else if (event.replyToken && text.startsWith("เชื่อม")) {
+      await reply(event.replyToken, "ไม่พบรหัสเชื่อมที่ใช้งานได้ กรุณาสร้างรหัสใหม่จากหน้าตั้งค่าระบบ แล้วส่งข้อความตามรหัสภายใน 10 นาที");
     }
   }
   return NextResponse.json({ ok: true });
