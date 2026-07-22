@@ -3,13 +3,14 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { BarChart3, BellRing, Building2, FileClock, FileText, Gauge, LayoutDashboard, Menu, Megaphone, ReceiptText, Settings, Users, Wallet, Wrench, X } from "lucide-react";
+import { BarChart3, BellRing, Building2, CalendarCheck2, Droplets, FileClock, FileText, Gauge, LayoutDashboard, Menu, Megaphone, ReceiptText, Settings, Users, Wallet, Wrench, X } from "lucide-react";
 
 type Role = "owner" | "staff" | "tenant" | null;
 type NavItem = readonly [string, string, typeof LayoutDashboard];
 const publicPages = ["/", "/login", "/forgot-password", "/reset-password", "/auth/callback"];
 const mainItems: readonly NavItem[] = [
   ["/dashboard", "ภาพรวม", LayoutDashboard],
+  ["/monthly-workflow", "งานประจำเดือน", CalendarCheck2],
   ["/rooms", "ห้องพัก", Building2],
   ["/tenants", "ผู้เช่า", Users],
   ["/leases", "สัญญาเช่า", FileText],
@@ -25,6 +26,7 @@ const operationItems: readonly NavItem[] = [
 ];
 const ownerItems: readonly NavItem[] = [
   ["/reports", "รายงาน", BarChart3],
+  ["/utilities", "ต้นทุนค่าน้ำ–ค่าไฟ", Droplets],
   ["/audit-logs", "ประวัติการทำรายการ", FileClock],
   ["/settings", "ตั้งค่าระบบ", Settings],
 ];
@@ -45,7 +47,7 @@ export function AppShell({ children, role }: { children: ReactNode; role: Role }
   ] as const;
   const isActive = (href: string) => pathname === href || (href !== "/dashboard" && pathname.startsWith(`${href}/`));
   const navigation = <nav aria-label="เมนูหลัก" className="space-y-6">{groups.map(([title, items]) => <div key={title}><p className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-[.12em] text-slate-400">{title}</p><div className="space-y-1">{items.map(([href, label, Icon]) => <Link key={href} href={href} aria-current={isActive(href) ? "page" : undefined} className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${isActive(href) ? "bg-teal-600 text-white shadow-[0_8px_20px_-10px_rgba(13,148,136,.9)]" : "text-slate-600 hover:bg-teal-50 hover:text-teal-800"}`}><span className={`grid h-8 w-8 place-items-center rounded-lg transition ${isActive(href) ? "bg-white/15" : "bg-slate-100 text-slate-500 group-hover:bg-white group-hover:text-teal-700"}`}><Icon size={17} /></span><span>{label}</span></Link>)}</div></div>)}</nav>;
-  const mobileLinks = [...primary, ...operationItems].filter(([href]) => ["/dashboard", "/rooms", "/invoices", "/maintenance", "/alerts"].includes(href));
+  const mobileLinks = [...primary, ...operationItems].filter(([href]) => ["/dashboard", "/monthly-workflow", "/rooms", "/invoices", "/payments"].includes(href));
   const roleLabel = role === "owner" ? "เจ้าของ" : "พนักงาน";
 
   return <div className="owner-app min-h-screen lg:pl-72">

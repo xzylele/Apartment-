@@ -1,0 +1,65 @@
+import { ArrowLeft, BarChart3, CircleDollarSign, Droplets, TrendingDown, TrendingUp, Zap } from "lucide-react";
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+import { UtilityBillForm } from "./utility-bill-form";
+
+type Props = { searchParams: Promise<{ month?: string }> };
+type Bill = { bill_month: string; utility_type: "water" | "electric"; provider_units: number; amount: number; due_date: string | null; paid_date: string | null; note: string | null };
+const money = (value: number) => `฿${value.toLocaleString("th-TH", { maximumFractionDigits: 2 })}`;
+const shiftMonth = (month: string, value: number) => { const date = new Date(`${month}-01T00:00:00Z`); date.setUTCMonth(date.getUTCMonth() + value); return date.toISOString().slice(0, 7); };
+const monthName = (month: string) => new Date(`${month}-01T00:00:00Z`).toLocaleDateString("th-TH", { month: "short", year: "2-digit" });
+
+export default async function UtilitiesPage({ searchParams }: Props) {
+  const params = await searchParams;
+  const currentMonth = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit" }).format(new Date());
+  const month = /^\d{4}-\d{2}$/.test(params.month ?? "") ? params.month! : currentMonth;
+  const selectedStart = `${month}-01`, historyStart = `${shiftMonth(month, -11)}-01`, historyEnd = `${shiftMonth(month, 1)}-01`;
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
+  if (profile?.role !== "owner") redirect("/dashboard");
+  const [billsResult, metersResult, invoicesResult] = await Promise.all([
+    supabase.from("utility_bills").select("bill_month,utility_type,provider_units,amount,due_date,paid_date,note").gte("bill_month", historyStart).lt("bill_month", historyEnd).order("bill_month", { ascending: false }),
+    supabase.from("meter_readings").select("reading_month,water_previous,water_current,electric_previous,electric_current").gte("reading_month", historyStart).lt("reading_month", historyEnd),
+    supabase.from("invoices").select("billing_month,water_amount,electric_amount,status").gte("billing_month", historyStart).lt("billing_month", historyEnd).neq("status", "void"),
+  ]);
+  const bills = (billsResult.data ?? []) as Bill[];
+  const billFor = (type: "water" | "electric", target = selectedStart) => bills.find((bill) => bill.bill_month === target && bill.utility_type === type) ?? null;
+  const meters = metersResult.data ?? [], invoices = invoicesResult.data ?? [];
+  const selectedMeters = meters.filter((reading) => reading.reading_month === selectedStart), selectedInvoices = invoices.filter((invoice) => invoice.billing_month === selectedStart);
+  const waterUnits = selectedMeters.reduce((sum, reading) => sum + Number(reading.water_current) - Number(reading.water_previous), 0);
+  const electricUnits = selectedMeters.reduce((sum, reading) => sum + Number(reading.electric_current) - Number(reading.electric_previous), 0);
+  const waterCharged = selectedInvoices.reduce((sum, invoice) => sum + Number(invoice.water_amount), 0);
+  const electricCharged = selectedInvoices.reduce((sum, invoice) => sum + Number(invoice.electric_amount), 0);
+  const waterBill = billFor("water"), electricBill = billFor("electric");
+  const waterCost = Number(waterBill?.amount ?? 0), electricCost = Number(electricBill?.amount ?? 0);
+  const waterMargin = waterCharged - waterCost, electricMargin = electricCharged - electricCost;
+  const waterLoss = Number(waterBill?.provider_units ?? 0) - waterUnits, electricLoss = Number(electricBill?.provider_units ?? 0) - electricUnits;
+  const totalCharged = waterCharged + electricCharged, totalCost = waterCost + electricCost, totalMargin = totalCharged - totalCost;
+  const history = Array.from({ length: 12 }, (_, index) => {
+    const key = shiftMonth(month, -index), date = `${key}-01`;
+    const monthMeters = meters.filter((reading) => reading.reading_month === date), monthInvoices = invoices.filter((invoice) => invoice.billing_month === date);
+    const tenantWaterUnits = monthMeters.reduce((sum, reading) => sum + Number(reading.water_current) - Number(reading.water_previous), 0), tenantElectricUnits = monthMeters.reduce((sum, reading) => sum + Number(reading.electric_current) - Number(reading.electric_previous), 0);
+    const chargedWater = monthInvoices.reduce((sum, invoice) => sum + Number(invoice.water_amount), 0), chargedElectric = monthInvoices.reduce((sum, invoice) => sum + Number(invoice.electric_amount), 0);
+    const wb = billFor("water", date), eb = billFor("electric", date), cost = Number(wb?.amount ?? 0) + Number(eb?.amount ?? 0), charged = chargedWater + chargedElectric;
+    return { key, tenantWaterUnits, tenantElectricUnits, providerWaterUnits: Number(wb?.provider_units ?? 0), providerElectricUnits: Number(eb?.provider_units ?? 0), cost, charged, margin: charged - cost, complete: Boolean(wb && eb) };
+  });
+  const migrationMissing = billsResult.error?.code === "42P01" || billsResult.error?.code === "PGRST205";
+  const monthLabel = new Date(`${selectedStart}T00:00:00Z`).toLocaleDateString("th-TH", { month: "long", year: "numeric" });
+
+  return <main className="min-h-screen"><header className="border-b bg-white"><div className="mx-auto flex max-w-7xl items-center gap-3 px-5 py-4"><Link href="/dashboard" className="rounded-lg p-2 text-slate-500"><ArrowLeft size={20}/></Link><span className="grid h-10 w-10 place-items-center rounded-xl bg-teal-600 text-white"><Droplets size={20}/></span><div><h1 className="font-bold">ต้นทุนค่าน้ำ–ค่าไฟ</h1><p className="text-xs text-slate-500">เปรียบเทียบบิลจริงกับหน่วยและยอดที่เรียกเก็บจากห้องพัก</p></div></div></header><section className="mx-auto max-w-7xl px-5 py-8">
+    <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-sm text-slate-500">รอบที่กำลังวิเคราะห์</p><h2 className="mt-1 text-2xl font-bold">{monthLabel}</h2><p className="mt-1 text-sm text-slate-500">ข้อมูลจากมิเตอร์ {selectedMeters.length} ห้อง · ใบแจ้งหนี้ {selectedInvoices.length} ใบ</p></div><div className="flex flex-wrap items-end gap-2"><form className="flex items-end gap-2 rounded-2xl border bg-white p-3"><label className="text-xs font-medium text-slate-500">เลือกเดือน<input name="month" type="month" defaultValue={month} className="mt-1 block rounded-xl border px-3 py-2 text-sm"/></label><button className="h-10 rounded-xl border border-teal-200 px-4 text-sm font-medium text-teal-700">ดูข้อมูล</button></form><UtilityBillForm month={month} water={waterBill} electric={electricBill}/></div></div>
+    {migrationMissing && <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800"><b>ยังไม่พบตารางเก็บบิลจริง</b><p className="mt-1">กรุณารัน migration 202607220014_utility_bills.sql ใน Supabase ก่อนบันทึกข้อมูล</p></div>}
+    {!migrationMissing && (billsResult.error || metersResult.error || invoicesResult.error) && <div className="mt-5 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">โหลดข้อมูลบางส่วนไม่สำเร็จ กรุณาลองใหม่อีกครั้ง</div>}
+    <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><article className="rounded-2xl bg-white p-5"><CircleDollarSign className="text-slate-600" size={21}/><p className="mt-3 text-sm text-slate-500">ยอดเรียกเก็บจากผู้เช่า</p><p className="mt-1 text-2xl font-bold">{money(totalCharged)}</p><p className="text-xs text-slate-500">น้ำและไฟรวมกัน</p></article><article className="rounded-2xl border-rose-100 bg-rose-50/60 p-5"><TrendingDown className="text-rose-600" size={21}/><p className="mt-3 text-sm text-rose-700">ต้นทุนบิลจริง</p><p className="mt-1 text-2xl font-bold text-rose-900">{money(totalCost)}</p><p className="text-xs text-rose-700">จากผู้ให้บริการ</p></article><article className={`rounded-2xl border p-5 ${totalMargin >= 0 ? "border-teal-100 bg-teal-50/60" : "border-rose-100 bg-rose-50/60"}`}>{totalMargin >= 0 ? <TrendingUp className="text-teal-600" size={21}/> : <TrendingDown className="text-rose-600" size={21}/>}<p className="mt-3 text-sm text-slate-600">ส่วนต่างรวม</p><p className={`mt-1 text-2xl font-bold ${totalMargin >= 0 ? "text-teal-900" : "text-rose-900"}`}>{money(totalMargin)}</p><p className="text-xs text-slate-500">ยอดเรียกเก็บหักต้นทุน</p></article><article className="rounded-2xl bg-white p-5"><BarChart3 className="text-violet-600" size={21}/><p className="mt-3 text-sm text-slate-500">ข้อมูลบิลจริง</p><p className="mt-1 text-2xl font-bold">{[waterBill, electricBill].filter(Boolean).length}/2</p><p className="text-xs text-slate-500">รายการที่บันทึกในเดือนนี้</p></article></div>
+    <div className="mt-6 grid gap-5 lg:grid-cols-2"><UtilityCard type="water" title="ค่าน้ำ" icon={<Droplets size={21}/>} tenantUnits={waterUnits} providerUnits={Number(waterBill?.provider_units ?? 0)} charged={waterCharged} cost={waterCost} margin={waterMargin} loss={waterLoss} hasBill={Boolean(waterBill)}/><UtilityCard type="electric" title="ค่าไฟ" icon={<Zap size={21}/>} tenantUnits={electricUnits} providerUnits={Number(electricBill?.provider_units ?? 0)} charged={electricCharged} cost={electricCost} margin={electricMargin} loss={electricLoss} hasBill={Boolean(electricBill)}/></div>
+    <section className="mt-6 overflow-hidden rounded-2xl bg-white"><div className="border-b p-5"><h2 className="font-bold">ประวัติเปรียบเทียบ 12 เดือน</h2><p className="mt-1 text-xs text-slate-500">ยอดเรียกเก็บ ต้นทุนจริง และส่วนต่างของน้ำ–ไฟรวมกัน</p></div><div className="overflow-x-auto"><table className="min-w-full text-left text-sm"><thead><tr><th className="px-5 py-3">เดือน</th><th className="px-5 py-3 text-right">หน่วยน้ำ ห้อง/อาคาร</th><th className="px-5 py-3 text-right">หน่วยไฟ ห้อง/อาคาร</th><th className="px-5 py-3 text-right">เรียกเก็บ</th><th className="px-5 py-3 text-right">ต้นทุน</th><th className="px-5 py-3 text-right">ส่วนต่าง</th><th className="px-5 py-3">ข้อมูล</th></tr></thead><tbody>{history.map((row) => <tr key={row.key} className="border-t"><td className="px-5 py-4 font-medium">{monthName(row.key)}</td><td className="px-5 py-4 text-right">{row.tenantWaterUnits.toLocaleString("th-TH")} / {row.providerWaterUnits.toLocaleString("th-TH")}</td><td className="px-5 py-4 text-right">{row.tenantElectricUnits.toLocaleString("th-TH")} / {row.providerElectricUnits.toLocaleString("th-TH")}</td><td className="px-5 py-4 text-right">{money(row.charged)}</td><td className="px-5 py-4 text-right">{money(row.cost)}</td><td className={`px-5 py-4 text-right font-bold ${row.margin >= 0 ? "text-teal-700" : "text-rose-700"}`}>{money(row.margin)}</td><td className="px-5 py-4"><span className={`rounded-full px-2.5 py-1 text-xs ${row.complete ? "bg-teal-50 text-teal-700" : "bg-slate-100 text-slate-500"}`}>{row.complete ? "ครบ" : "ยังไม่ครบ"}</span></td></tr>)}</tbody></table></div></section>
+  </section></main>;
+}
+
+function UtilityCard({ type, title, icon, tenantUnits, providerUnits, charged, cost, margin, loss, hasBill }: { type: "water" | "electric"; title: string; icon: React.ReactNode; tenantUnits: number; providerUnits: number; charged: number; cost: number; margin: number; loss: number; hasBill: boolean }) {
+  const tone = type === "water" ? "text-blue-700 bg-blue-50" : "text-amber-700 bg-amber-50";
+  return <article className="rounded-2xl bg-white p-5"><div className="flex items-center justify-between"><h3 className="flex items-center gap-2 font-bold"><span className={`grid h-10 w-10 place-items-center rounded-xl ${tone}`}>{icon}</span>{title}</h3><span className={`rounded-full px-2.5 py-1 text-xs ${hasBill ? "bg-teal-50 text-teal-700" : "bg-rose-50 text-rose-700"}`}>{hasBill ? "บันทึกบิลแล้ว" : "ยังไม่มีบิลจริง"}</span></div><dl className="mt-5 grid grid-cols-2 gap-4 text-sm"><div><dt className="text-slate-500">หน่วยรวมจากห้อง</dt><dd className="mt-1 text-lg font-bold">{tenantUnits.toLocaleString("th-TH")}</dd></div><div><dt className="text-slate-500">หน่วยจากผู้ให้บริการ</dt><dd className="mt-1 text-lg font-bold">{providerUnits.toLocaleString("th-TH")}</dd></div><div><dt className="text-slate-500">ยอดเรียกเก็บ</dt><dd className="mt-1 font-semibold">{money(charged)}</dd></div><div><dt className="text-slate-500">ต้นทุนจริง</dt><dd className="mt-1 font-semibold text-rose-700">{money(cost)}</dd></div><div><dt className="text-slate-500">ส่วนต่างเงิน</dt><dd className={`mt-1 font-bold ${margin >= 0 ? "text-teal-700" : "text-rose-700"}`}>{money(margin)}</dd></div><div><dt className="text-slate-500">ส่วนต่างหน่วย</dt><dd className={`mt-1 font-bold ${loss > 0 ? "text-rose-700" : "text-teal-700"}`}>{loss.toLocaleString("th-TH")} หน่วย</dd></div></dl><p className="mt-4 rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-600">ส่วนต่างหน่วย = หน่วยจากผู้ให้บริการ − หน่วยรวมที่จดจากห้อง ค่าบวกอาจหมายถึงการใช้ส่วนกลางหรือหน่วยสูญเสีย</p></article>;
+}
