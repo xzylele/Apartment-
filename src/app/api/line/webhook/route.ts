@@ -33,6 +33,13 @@ async function reply(replyToken: string, text: string, showMenu = false) {
   if (!response.ok) console.error("LINE reply failed", response.status);
 }
 
+async function attachAdminRichMenu(userId: string) {
+  const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+  const richMenuId = process.env.LINE_ADMIN_RICH_MENU_ID;
+  if (!token || !richMenuId) return;
+  const response = await fetch(`https://api.line.me/v2/bot/user/${userId}/richmenu/${richMenuId}`, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+  if (!response.ok) console.error("LINE rich menu link failed", response.status);
+}
 function bangkokDate() { return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok" }).format(new Date()); }
 function baht(value: number) { return `\u0e3f${value.toLocaleString("th-TH", { maximumFractionDigits: 2 })}`; }
 
@@ -98,22 +105,27 @@ export async function POST(request: Request) {
   if (!validSignature(rawBody, request.headers.get("x-line-signature"))) return new NextResponse("Invalid signature", { status: 401 });
   const payload = JSON.parse(rawBody) as { events?: LineEvent[] };
   const admin = createAdminClient();
-  const { data } = await admin.from("app_settings").select("line_admin_user_id,line_link_code,line_link_code_expires_at").eq("id", true).maybeSingle();
-  const settings = (data ?? {}) as Settings;
   for (const event of payload.events ?? []) {
     const userId = event.source?.type === "user" ? event.source.userId : null;
     const text = event.type === "message" && event.message?.type === "text" ? event.message.text?.trim() ?? "" : "";
-    const expected = settings.line_link_code ? `${lineMenu.linkPrefix} ${settings.line_link_code}` : "";
-    const unexpired = settings.line_link_code_expires_at && new Date(settings.line_link_code_expires_at) > new Date();
-    if (userId && expected && text === expected && unexpired) {
-      await admin.from("app_settings").update({ line_admin_user_id: userId, line_link_code: null, line_link_code_expires_at: null, updated_at: new Date().toISOString() }).eq("id", true);
-      if (event.replyToken) await reply(event.replyToken, lineMenu.linked, true);
-    } else if (userId && userId === settings.line_admin_user_id && event.type === "postback" && event.postback?.data?.startsWith("admin:")) {
+    const linkCode = text.startsWith(`${lineMenu.linkPrefix} `) ? text.slice(lineMenu.linkPrefix.length + 1).trim() : "";
+    if (userId && linkCode) {
+      const { data: connection } = await admin.from("line_admin_connections").select("id,link_code_expires_at").eq("link_code", linkCode).maybeSingle();
+      const valid = connection?.link_code_expires_at && new Date(connection.link_code_expires_at) > new Date();
+      if (valid) {
+        await admin.from("line_admin_connections").update({ line_user_id: userId, link_code: null, link_code_expires_at: null, enabled: true, linked_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", connection.id);
+        await attachAdminRichMenu(userId);
+        if (event.replyToken) await reply(event.replyToken, lineMenu.linked, true);
+      } else if (event.replyToken) {
+        await reply(event.replyToken, lineMenu.invalidLink);
+      }
+      continue;
+    }
+    const { data: connection } = userId ? await admin.from("line_admin_connections").select("enabled").eq("line_user_id", userId).maybeSingle() : { data: null };
+    if (connection?.enabled && event.type === "postback" && event.postback?.data?.startsWith("admin:")) {
       if (event.replyToken) await reply(event.replyToken, await getMenuReply(admin, event.postback.data), true);
-    } else if (userId && userId === settings.line_admin_user_id && [lineMenu.menu, "menu"].includes(text.toLowerCase())) {
+    } else if (connection?.enabled && [lineMenu.menu, "menu"].includes(text.toLowerCase())) {
       if (event.replyToken) await reply(event.replyToken, lineMenu.choose, true);
-    } else if (event.replyToken && text.startsWith(lineMenu.linkPrefix)) {
-      await reply(event.replyToken, lineMenu.invalidLink);
     }
   }
   return NextResponse.json({ ok: true });

@@ -18,13 +18,13 @@ const richMenu = { size: { width: 2500, height: 1686 }, selected: true, name: "A
   { bounds: { x: 833, y: 120, width: 834, height: 783 }, action: { type: "postback", data: "admin:income", displayText: "ดูรายรับ" } },
   { bounds: { x: 1667, y: 120, width: 833, height: 783 }, action: { type: "postback", data: "admin:overdue", displayText: "ดูบิลค้าง" } },
   { bounds: { x: 0, y: 903, width: 833, height: 783 }, action: { type: "postback", data: "admin:vacant", displayText: "ดูห้องว่าง" } },
-  { bounds: { x: 833, y: 903, width: 834, height: 783 }, action: { type: "postback", data: "admin:leases", displayText: "ดูสัญญาเช่า" } },
+  { bounds: { x: 833, y: 903, width: 834, height: 783 }, action: { type: "uri", uri: "https://apartment888.vercel.app" } },
   { bounds: { x: 1667, y: 903, width: 833, height: 783 }, action: { type: "postback", data: "admin:operations", displayText: "ดูค่าน้ำไฟและงานซ่อม" } },
 ] };
 const createResponse = await fetch("https://api.line.me/v2/bot/richmenu", { method: "POST", headers: { ...auth, "Content-Type": "application/json" }, body: JSON.stringify(richMenu) });
 if (!createResponse.ok) throw new Error(`Create rich menu failed: ${await createResponse.text()}`);
 const { richMenuId } = await createResponse.json();
-const image = fs.readFileSync(path.join(root, "public", "line-admin-rich-menu.png"));
+const image = fs.readFileSync(path.join(root, "public", "line-admin-rich-menu-v2.png"));
 const uploadResponse = await fetch(`https://api-data.line.me/v2/bot/richmenu/${richMenuId}/content`, { method: "POST", headers: { ...auth, "Content-Type": "image/png" }, body: image });
 if (!uploadResponse.ok) throw new Error(`Upload rich menu image failed: ${await uploadResponse.text()}`);
 const linkResponse = await fetch(`https://api.line.me/v2/bot/user/${settings.line_admin_user_id}/richmenu/${richMenuId}`, { method: "POST", headers: auth });
