@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { formatBaht, notifyLineAdmin } from "@/lib/line";
 
 export type PaymentState = { error?: string; success?: string };
 const allowedTypes = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
@@ -52,6 +53,7 @@ export async function recordPayment(_: PaymentState, formData: FormData): Promis
   const { error } = await supabase.from("payments").insert({ invoice_id: invoiceId, amount, method, reference: reference || null, slip_path: slipPath, paid_at: new Date(paidAt).toISOString(), recorded_by: user.id });
   if (error) { if (slipPath) await supabase.storage.from("payment-slips").remove([slipPath]); return { error: "ไม่สามารถบันทึกการชำระเงินได้" }; }
   if (alreadyPaid + amount >= Number(invoice.total_amount) - 0.001) await supabase.from("invoices").update({ status: "paid" }).eq("id", invoiceId);
+  await notifyLineAdmin(supabase, `รายรับใหม่\nใบแจ้งหนี้ ${invoice.invoice_number}\nรับชำระ ${formatBaht(amount)} (${method})`);
   await revalidatePaymentPages();
   return { success: `บันทึกรับชำระ ${invoice.invoice_number} จำนวน ${amount.toLocaleString("th-TH")} บาทแล้ว` };
 }

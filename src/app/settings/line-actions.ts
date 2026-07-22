@@ -1,0 +1,5 @@
+"use server";
+import { randomBytes } from "crypto";
+import { createClient } from "@/lib/supabase/server";
+export type LineLinkState = { error?: string; code?: string };
+export async function createLineLinkCode(_: LineLinkState): Promise<LineLinkState> { if (!process.env.LINE_CHANNEL_ACCESS_TOKEN || !process.env.LINE_CHANNEL_SECRET) return { error: "ยังไม่ได้ตั้งค่า LINE_CHANNEL_ACCESS_TOKEN และ LINE_CHANNEL_SECRET บนเซิร์ฟเวอร์" }; const supabase = await createClient(); const { data: { user } } = await supabase.auth.getUser(); if (!user) return { error: "กรุณาเข้าสู่ระบบอีกครั้ง" }; const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle(); if (profile?.role !== "owner") return { error: "เฉพาะเจ้าของเท่านั้นที่เชื่อม LINE ได้" }; const code = randomBytes(4).toString("hex").toUpperCase(); const { error } = await supabase.from("app_settings").upsert({ id: true, line_link_code: code, line_link_code_expires_at: new Date(Date.now() + 600_000).toISOString(), updated_at: new Date().toISOString() }); return error ? { error: "สร้างรหัสเชื่อมต่อไม่สำเร็จ โปรดรัน migration ล่าสุด" } : { code }; }

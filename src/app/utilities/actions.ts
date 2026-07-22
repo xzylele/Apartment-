@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { formatBaht, notifyLineAdmin } from "@/lib/line";
 
 export type UtilityState = { error?: string; success?: string };
 
@@ -23,6 +24,7 @@ export async function saveUtilityBills(_: UtilityState, formData: FormData): Pro
   const { error } = await supabase.from("utility_bills").upsert(payload, { onConflict: "bill_month,utility_type" });
   if (error?.code === "42P01") return { error: "ยังไม่ได้สร้างตาราง utility_bills กรุณารัน migration 014 ก่อน" };
   if (error) return { error: "บันทึกบิลค่าน้ำ–ค่าไฟไม่สำเร็จ" };
+  await notifyLineAdmin(supabase, `บันทึกค่าน้ำค่าไฟ ${month}` + "\n" + `ค่าน้ำ ${formatBaht(rows[0].amount)}` + "\n" + `ค่าไฟ ${formatBaht(rows[1].amount)}`);
   ["/utilities", "/dashboard", "/reports"].forEach((path) => revalidatePath(path));
   return { success: "บันทึกต้นทุนค่าน้ำ–ค่าไฟเรียบร้อยแล้ว" };
 }
