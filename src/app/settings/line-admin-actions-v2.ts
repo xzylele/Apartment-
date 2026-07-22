@@ -18,6 +18,7 @@ export async function createAdditionalLineLinkCode(_: LineAdminActionState): Pro
   if (!process.env.LINE_CHANNEL_ACCESS_TOKEN || !process.env.LINE_CHANNEL_SECRET) return { error: "ยังไม่ได้ตั้งค่าการเชื่อมต่อ LINE บนเซิร์ฟเวอร์" };
   const { supabase, user, role } = await currentManager();
   if (!user || !["owner", "staff"].includes(role ?? "")) return { error: "ไม่มีสิทธิ์เชื่อม LINE" };
+  await supabase.from("line_admin_connections").delete().eq("profile_id", user.id).is("line_user_id", null).lt("link_code_expires_at", new Date().toISOString());
   const code = randomBytes(4).toString("hex").toUpperCase();
   const { error } = await supabase.from("line_admin_connections").insert({ profile_id: user.id, link_code: code, link_code_expires_at: new Date(Date.now() + 600_000).toISOString(), enabled: true });
   if (error) return { error: "สร้างรหัสไม่สำเร็จ กรุณารัน migration ล่าสุด" };
