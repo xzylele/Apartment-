@@ -3,9 +3,10 @@
 import { useState, useTransition } from "react";
 import { ExternalLink, FileImage, Pencil, Upload, X } from "lucide-react";
 import { updatePayment } from "./actions";
+import { bangkokDateTimeInput } from "@/lib/bangkok-time";
 
 type Payment = { id: string; invoice_number: string; room_number: string; amount: number; paid_at: string; method: string; reference: string | null; slip_path: string | null; slip_url: string | null };
-const toLocal = (value: string) => { const date = new Date(value); date.setMinutes(date.getMinutes() - date.getTimezoneOffset()); return date.toISOString().slice(0, 16); };
+const toLocal = bangkokDateTimeInput;
 const field = "mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm";
 
 export function PaymentActions({ payment }: { payment: Payment }) {

@@ -2,13 +2,17 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { formatBaht, notifyLineAdmin } from "@/lib/line";
+import { notifyLineAdmin } from "@/lib/line";
+import { paymentRoomConfirmationMessage } from "@/lib/line-payment-room-message";
 
 export type PaymentState = { error?: string; success?: string };
 const allowedTypes = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
 
 function readFields(formData: FormData) {
   return { amount: Number(formData.get("amount")), method: String(formData.get("method") ?? "cash"), paidAt: String(formData.get("paidAt") ?? ""), reference: String(formData.get("reference") ?? "").trim() };
+}
+function bangkokToUtc(paidAt: string) {
+  return new Date(`${paidAt}:00+07:00`).toISOString();
 }
 function validateFields(amount: number, method: string, paidAt: string) {
   if (!Number.isFinite(amount) || amount <= 0 || Number.isNaN(new Date(paidAt).getTime())) return "กรุณากรอกยอดและวันรับชำระให้ถูกต้อง";
@@ -36,7 +40,7 @@ export async function recordPayment(_: PaymentState, formData: FormData): Promis
   const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
   if (!profile || !["owner", "staff"].includes(profile.role)) return { error: "คุณไม่มีสิทธิ์รับชำระเงิน" };
 
-  const { data: invoice } = await supabase.from("invoices").select("total_amount,invoice_number,status").eq("id", invoiceId).maybeSingle();
+  const { data: invoice } = await supabase.from("invoices").select("total_amount,invoice_number,status,rooms(room_number)").eq("id", invoiceId).maybeSingle();
   if (!invoice || !["issued", "overdue"].includes(invoice.status)) return { error: "ใบแจ้งหนี้นี้ไม่อยู่ในสถานะที่รับชำระได้" };
   const { data: previousPayments } = await supabase.from("payments").select("amount").eq("invoice_id", invoiceId);
   const alreadyPaid = (previousPayments ?? []).reduce((sum, item) => sum + Number(item.amount), 0);
@@ -50,10 +54,11 @@ export async function recordPayment(_: PaymentState, formData: FormData): Promis
     if (uploaded.error) return { error: uploaded.error };
     slipPath = uploaded.path ?? null;
   }
-  const { error } = await supabase.from("payments").insert({ invoice_id: invoiceId, amount, method, reference: reference || null, slip_path: slipPath, paid_at: new Date(paidAt).toISOString(), recorded_by: user.id });
+  const { error } = await supabase.from("payments").insert({ invoice_id: invoiceId, amount, method, reference: reference || null, slip_path: slipPath, paid_at: bangkokToUtc(paidAt), recorded_by: user.id });
   if (error) { if (slipPath) await supabase.storage.from("payment-slips").remove([slipPath]); return { error: "ไม่สามารถบันทึกการชำระเงินได้" }; }
   if (alreadyPaid + amount >= Number(invoice.total_amount) - 0.001) await supabase.from("invoices").update({ status: "paid" }).eq("id", invoiceId);
-  await notifyLineAdmin(supabase, `รายรับใหม่\nใบแจ้งหนี้ ${invoice.invoice_number}\nรับชำระ ${formatBaht(amount)} (${method})`);
+  const roomNumber = invoice.rooms?.[0]?.room_number ?? "-";
+  await notifyLineAdmin(supabase, paymentRoomConfirmationMessage(roomNumber, amount, method));
   await revalidatePaymentPages();
   return { success: `บันทึกรับชำระ ${invoice.invoice_number} จำนวน ${amount.toLocaleString("th-TH")} บาทแล้ว` };
 }
@@ -85,7 +90,7 @@ export async function updatePayment(paymentId: string, formData: FormData): Prom
     if (uploaded.error) return { error: uploaded.error };
     newPath = uploaded.path;
   }
-  const update: Record<string, unknown> = { amount, method, reference: reference || null, paid_at: new Date(paidAt).toISOString() };
+  const update: Record<string, unknown> = { amount, method, reference: reference || null, paid_at: bangkokToUtc(paidAt) };
   if (newPath !== undefined) update.slip_path = newPath;
   const { error } = await supabase.from("payments").update(update).eq("id", paymentId);
   if (error) { if (newPath) await supabase.storage.from("payment-slips").remove([newPath]); return { error: "ไม่สามารถแก้ไขรายการรับชำระได้" }; }

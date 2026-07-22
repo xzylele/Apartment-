@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { lineMenu, lineReport } from "@/lib/line-admin-messages";
+import { richMenuDetails } from "@/lib/line-rich-menu-details";
 
 export const runtime = "nodejs";
 
@@ -44,23 +45,25 @@ async function getMenuReply(admin: ReturnType<typeof createAdminClient>, action:
   }
   if (action === "admin:income") {
     const today = bangkokDate();
-    const monthStart = `${today.slice(0, 7)}-01T00:00:00+07:00`;
-    const nextMonth = new Date(`${today.slice(0, 7)}-01T00:00:00+07:00`);
-    nextMonth.setMonth(nextMonth.getMonth() + 1);
-    const monthEnd = `${nextMonth.toISOString().slice(0, 7)}-01T00:00:00+07:00`;
+    const [year, month] = today.split("-").map(Number);
+    const monthStart = `${year}-${String(month).padStart(2, "0")}-01T00:00:00+07:00`;
+    const nextYear = month === 12 ? year + 1 : year;
+    const nextMonth = month === 12 ? 1 : month + 1;
+    const monthEnd = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01T00:00:00+07:00`;
     const [{ data: todayData }, { data: monthData }] = await Promise.all([
       admin.from("payments").select("amount").gte("paid_at", `${today}T00:00:00+07:00`).lt("paid_at", `${today}T23:59:59.999+07:00`),
       admin.from("payments").select("amount").gte("paid_at", monthStart).lt("paid_at", monthEnd),
     ]);
     const sum = (items: Array<{ amount: number | string }> | null) => (items ?? []).reduce((total, item) => total + Number(item.amount), 0);
-    return lineReport.income(today, todayData?.length ?? 0, baht(sum(todayData)), monthData?.length ?? 0, baht(sum(monthData)));
+    return richMenuDetails.income(today, todayData?.length ?? 0, baht(sum(todayData)), monthData?.length ?? 0, baht(sum(monthData)));
   }
   if (action === "admin:overdue") {
     const today = bangkokDate();
-    const { data } = await admin.from("invoices").select("total_amount").in("status", ["issued", "overdue"]).lte("due_date", today);
+    const { data } = await admin.from("invoices").select("invoice_number,due_date,total_amount,rooms(room_number)").in("status", ["issued", "overdue"]).lte("due_date", today).order("due_date").limit(20);
     const invoices = data ?? [];
     const total = invoices.reduce((sum: number, invoice: { total_amount: number | string }) => sum + Number(invoice.total_amount), 0);
-    return lineReport.overdue(invoices.length, baht(total));
+    const lines = invoices.map((invoice: { invoice_number: string; due_date: string; total_amount: number | string; rooms?: Array<{ room_number?: string }> }) => `${invoice.rooms?.[0]?.room_number ?? "-"} | ${invoice.invoice_number} | ${invoice.due_date} | ${baht(Number(invoice.total_amount))}`);
+    return richMenuDetails.overdue(lines, baht(total));
   }
   if (action === "admin:vacant") {
     const { data } = await admin.from("rooms").select("room_number,monthly_rent").eq("status", "vacant").is("deleted_at", null).order("room_number").limit(20);
@@ -78,13 +81,14 @@ async function getMenuReply(admin: ReturnType<typeof createAdminClient>, action:
   }
   if (action === "admin:operations") {
     const month = bangkokDate().slice(0, 7);
-    const [{ data: utilityData }, { count }] = await Promise.all([
+    const [{ data: utilityData }, { data: maintenanceData }] = await Promise.all([
       admin.from("utility_bills").select("utility_type,amount").eq("bill_month", `${month}-01`),
-      admin.from("maintenance_requests").select("id", { count: "exact", head: true }).in("status", ["open", "in_progress"]),
+      admin.from("maintenance_requests").select("title,status,priority,rooms(room_number)").in("status", ["open", "in_progress"]).order("priority", { ascending: false }).limit(10),
     ]);
     const bills = utilityData ?? [];
     const value = (type: string) => Number(bills.find((bill: { utility_type: string }) => bill.utility_type === type)?.amount ?? 0);
-    return lineReport.operations(month, baht(value("water")), baht(value("electric")), count ?? 0);
+    const maintenance = (maintenanceData ?? []).map((item: { title: string; status: string; rooms?: Array<{ room_number?: string }> }) => `${item.rooms?.[0]?.room_number ?? "-"} | ${item.title} | ${item.status}`);
+    return richMenuDetails.operations(month, baht(value("water")), baht(value("electric")), maintenance);
   }
   return lineMenu.choose;
 }

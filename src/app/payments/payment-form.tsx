@@ -3,10 +3,11 @@
 import { useActionState, useMemo, useState } from "react";
 import { BanknoteArrowDown, CalendarDays, CheckCircle2, CircleDollarSign, CreditCard, Paperclip, ReceiptText } from "lucide-react";
 import { recordPayment, type PaymentState } from "./actions";
+import { bangkokDateTimeInput } from "@/lib/bangkok-time";
 
 type Invoice = { id: string; invoice_number: string; outstanding: number; total_amount: number; due_date: string; room_number: string; tenant_name: string };
 const initialState: PaymentState = {};
-const nowLocal = () => { const date = new Date(); date.setMinutes(date.getMinutes() - date.getTimezoneOffset()); return date.toISOString().slice(0, 16); };
+const nowLocal = () => bangkokDateTimeInput(new Date());
 const field = "mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm";
 
 export function PaymentForm({ invoices }: { invoices: Invoice[] }) {
